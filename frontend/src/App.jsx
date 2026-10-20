@@ -59,6 +59,16 @@ export default function App() {
     }
   };
 
+  // Total = sum of the real price of every selected seat (seat.price), not event base price
+  const calcTotal = () => {
+    if (!selectedEvent) return 0;
+    const allSeats = mockService.getSeats(selectedEvent.id);
+    return selectedSeatIds.reduce((sum, id) => {
+      const seat = allSeats.find(x => x.id === id);
+      return sum + (seat ? seat.price : selectedEvent.price);
+    }, 0);
+  };
+
   const proceedToCheckout = () => {
     if (selectedSeatIds.length === 0) {
       alert('Please select at least one seat.');
@@ -82,7 +92,7 @@ export default function App() {
     const orderData = {
       event_id: selectedEvent.id,
       seat_ids: selectedSeatIds,
-      total_amount: selectedSeatIds.length * selectedEvent.price,
+      total_amount: calcTotal(),
       customer_name: customerName,
       customer_email: customerEmail,
       card_number: cardNumber,
@@ -224,7 +234,7 @@ export default function App() {
                   onClick={proceedToCheckout}
                   className="bg-emerald-600 hover:bg-emerald-500 disabled:opacity-50 disabled:cursor-not-allowed text-white px-6 py-3 rounded-xl font-bold transition shadow-lg shadow-emerald-500/20"
                 >
-                  Proceed to Checkout ({selectedSeatIds.length * selectedEvent.price} ₸)
+                  Proceed to Checkout ({calcTotal()} ₸)
                 </button>
               </div>
             </div>
@@ -295,7 +305,7 @@ export default function App() {
                 </div>
                 <div className="flex justify-between text-slate-400 pt-2 border-t border-slate-800">
                   <span>Total Amount:</span>
-                  <span className="text-indigo-400 font-bold">{selectedSeatIds.length * selectedEvent.price} ₸</span>
+                  <span className="text-indigo-400 font-bold">{calcTotal()} ₸</span>
                 </div>
               </div>
 
