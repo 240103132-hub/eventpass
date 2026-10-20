@@ -7,6 +7,8 @@ const STORAGE_KEYS = {
   TICKETS: 'eventpass_tickets',
 };
 
+const DECLINED_CARD = '4000000000000002'; // simulated payment: this card is always declined
+
 const defaultEvents = [
   {
     id: 1,
@@ -98,7 +100,13 @@ export const mockService = {
     return { success: true, held_until: holdUntil };
   },
 
-  createOrder(orderData) {
+  createOrder(rawOrderData) {
+    // The card number is only used to simulate the payment and is never stored.
+    const { card_number, ...orderData } = rawOrderData;
+    const normalizedCard = String(card_number || '').replace(/[\s-]/g, '');
+    if (normalizedCard === DECLINED_CARD) {
+      return { success: false, error: 'Card declined. Please try another card.' };
+    }
     const orders = JSON.parse(localStorage.getItem(STORAGE_KEYS.ORDERS) || '[]');
     const newOrder = {
       id: Date.now(),

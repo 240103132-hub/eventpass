@@ -19,6 +19,7 @@ export default function App() {
   const [customerName, setCustomerName] = useState('');
   const [customerEmail, setCustomerEmail] = useState('');
   const [cardNumber, setCardNumber] = useState('');
+  const [paymentError, setPaymentError] = useState('');
 
   useEffect(() => {
     setEvents(mockService.getEvents());
@@ -66,6 +67,7 @@ export default function App() {
     const res = mockService.holdSeats(selectedEvent.id, selectedSeatIds);
     if (res.success) {
       setHoldTimer(600); // 10 minutes
+      setPaymentError('');
       setView('checkout');
     }
   };
@@ -83,9 +85,15 @@ export default function App() {
       total_amount: selectedSeatIds.length * selectedEvent.price,
       customer_name: customerName,
       customer_email: customerEmail,
+      card_number: cardNumber,
     };
 
     const result = mockService.createOrder(orderData);
+    if (result.error) {
+      setPaymentError(result.error);
+      return;
+    }
+    setPaymentError('');
     setLastOrder(result.order);
     setLastTickets(result.tickets);
     setView('success');
@@ -235,6 +243,11 @@ export default function App() {
             </div>
 
             <form onSubmit={handleCompletePayment} className="space-y-4">
+              {paymentError && (
+                <div role="alert" className="bg-rose-500/10 border border-rose-500/30 text-rose-400 text-sm font-semibold rounded-xl px-4 py-3">
+                  {paymentError}
+                </div>
+              )}
               <div>
                 <label className="block text-xs font-bold text-slate-400 uppercase tracking-wider mb-1">Full Name</label>
                 <input 
@@ -264,7 +277,7 @@ export default function App() {
                 <input 
                   type="text" 
                   value={cardNumber} 
-                  onChange={e => setCardNumber(e.target.value)} 
+                  onChange={e => { setCardNumber(e.target.value); setPaymentError(''); }} 
                   placeholder="4000 1234 5678 9010"
                   required
                   className="w-full bg-slate-900 border border-slate-700 rounded-xl px-4 py-3 text-white focus:outline-none focus:border-indigo-500"
