@@ -1,5 +1,7 @@
 """HTTP layer. Thin on purpose: parse, call the service, serialize. Rules live in services.py."""
+import asyncio
 import os
+from contextlib import asynccontextmanager
 from typing import Optional
 
 from fastapi import Depends, FastAPI, Header, Query, Request, Response
@@ -28,7 +30,18 @@ def build_service() -> TicketingService:
 
 
 def create_app(service: Optional[TicketingService] = None) -> FastAPI:
-    app = FastAPI(title="EventPass API", version="0.2.0")
+    @asynccontextmanager
+    async def lifespan(application: FastAPI):
+        async def cleanup_loop():  # issue #20: background task that removes stale holds every minute
+            while True:
+                await asyncio.sleep(60)
+                await asyncio.to_thread(application.state.service.purge_expired)
+
+        task = asyncio.create_task(cleanup_loop())
+        yield
+        task.cancel()
+
+    app = FastAPI(title="EventPass API", version="0.2.0", lifespan=lifespan)
     app.state.service = service or build_service()
 
     app.add_middleware(
@@ -126,12 +139,6 @@ def create_app(service: Optional[TicketingService] = None) -> FastAPI:
     @app.get("/api/auth/me", response_model=s.StaffOut)
     def me(staff=Depends(current_staff)):
         return staff
-
-    @app.post("/api/auth/logout", status_code=204)
-    def logout(service: TicketingService = Depends(svc), token: Optional[str] = Depends(bearer)):
-        if token:
-            service.logout(token)
-        return Response(status_code=204)
 
     @app.post("/api/tickets/verify", response_model=s.ScanOut, response_model_exclude_none=True)
     def verify(body: s.ScanIn, service: TicketingService = Depends(svc), staff=Depends(current_staff)):

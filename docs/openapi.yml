@@ -8,6 +8,23 @@ info:
     Money is an integer number of KZT. Timestamps are ISO 8601 (UTC).
     Every seat or zone is a "unit" (sellable unit): holds, orders and tickets work the same for both.
     Guests do not have accounts. An order code or ticket code is the access key to that object.
+
+    ## Errors
+    Every error response is JSON `{"code": "...", "detail": "human readable message"}`.
+
+    | HTTP | code | Meaning |
+    |------|------|---------|
+    | 401 | unauthorized | Missing or invalid bearer token, or wrong email/password |
+    | 402 | card_declined | Test card 4000 0000 0000 0002; the hold keeps running, no order is created |
+    | 403 | forbidden | The event belongs to another venue than the staff member |
+    | 404 | not_found | Unknown event, unit, hold, order or ticket |
+    | 409 | unit_held | Someone else holds this seat/zone quantity right now |
+    | 409 | unit_sold | The seat/zone quantity is already sold |
+    | 409 | validation_error | Order already cancelled, or some of its tickets were already used |
+    | 410 | hold_expired | The 10 minute hold ended before payment; places were released |
+    | 422 | validation_error | Invalid or missing fields (name, email, card number, items) |
+    | 422 | limit_exceeded | More than 8 tickets in one hold |
+    | 500 | internal_error | Unexpected server error |
 servers:
   - url: http://localhost:8000
 security: []

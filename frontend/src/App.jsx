@@ -190,7 +190,20 @@ export default function App() {
                 {cities.map((c) => <option key={c} value={c}>{c}</option>)}
               </select>
             </div>
-            {loading && <p className="text-slate-400">Loading events…</p>}
+            {loading && (
+              <div className="grid md:grid-cols-3 gap-6" aria-busy="true" aria-label="Loading events">
+                {[1, 2, 3].map((i) => (
+                  <div key={i} className="bg-slate-800 border border-slate-700 rounded-2xl overflow-hidden animate-pulse">
+                    <div className="h-48 bg-slate-700" />
+                    <div className="p-6 space-y-3">
+                      <div className="h-5 bg-slate-700 rounded w-3/4" />
+                      <div className="h-4 bg-slate-700 rounded w-1/2" />
+                      <div className="h-4 bg-slate-700 rounded w-2/3" />
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
             {loadError && <div role="alert" className={alertCls}>{loadError}</div>}
             {!loading && !loadError && events.length === 0 && <p className="text-slate-400">No events found.</p>}
             <div className="grid md:grid-cols-3 gap-6">

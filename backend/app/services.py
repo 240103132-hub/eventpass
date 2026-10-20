@@ -234,6 +234,12 @@ class TicketingService:
             raise ApiError(404, "not_found", "Order not found")
         return order
 
+    def purge_expired(self):
+        """Background cleanup (issue #20). Availability never depends on it: units are released the moment
+        expires_at passes. Rows are removed after a 1 hour grace period so a late payer still sees 'hold_expired'."""
+        with self.repo.transaction():
+            self._purge_expired()
+
     def _purge_expired(self):
         cutoff = self.clock() - timedelta(hours=1)
         for h in self.repo.all_holds():

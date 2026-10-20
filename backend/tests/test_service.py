@@ -91,6 +91,18 @@ class ServiceTests:
         self.assertApi(410, "hold_expired", self.buy, h)
         self.hold([{"unit_id": "1-A-2"}])  # seat can be taken again
 
+    def test_purge_removes_stale_holds_after_grace_period(self):
+        h = self.hold([{"unit_id": "1-A-4"}])
+        self.clock.advance(minutes=30)
+        self.svc.purge_expired()
+        self.assertIsNotNone(self.svc.repo.get_hold(h["id"]))  # inside the 1 hour grace period
+        self.assertApi(410, "hold_expired", self.buy, h)
+        h2 = self.hold([{"unit_id": "1-A-4"}])
+        self.clock.advance(hours=2)
+        self.svc.purge_expired()
+        self.assertIsNone(self.svc.repo.get_hold(h2["id"]))
+        self.assertEqual(self.unit(1, "1-A-4")["status"], "available")
+
     def test_release_hold(self):
         h = self.hold([{"unit_id": "1-A-3"}])
         self.svc.release_hold(h["id"])
