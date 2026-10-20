@@ -71,3 +71,12 @@ real payment provider, multiple languages, Postgres + Docker deploy.
 
 Deviation note: the first backend draft was written directly on SQLAlchemy and before
 openapi.yml. The contract is generated from the running backend and reviewed by hand.
+
+## Scope decision (PM grooming)
+MVP covers the guest journey and the check-in scanner: catalog, seat/zone selection, 10-minute holds, simulated payment,
+tickets with QR, order cancellation, controller login and scanner, SQLite persistence.
+Moved to post-mvp: organizer role and dashboard (event editor, sales statistics, controller accounts, email log),
+hall layout constructor, PDF ticket download, venue switcher in the header, toast notifications.
+Reason: they are not needed for the guest and scanner flow, demo venues, events and controllers are seeded,
+and the deadline does not leave time to build and test them properly.
+A declined card creates no order record at all (the hold stays); there is no "pending" order.

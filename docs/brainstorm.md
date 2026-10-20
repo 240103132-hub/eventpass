@@ -1,5 +1,7 @@
 # Brainstorm: EventPass
 
+> **Note:** the original chat export of the brainstorming session is not available (it was done in a different account). This file is a reconstructed record: the questions asked, the options considered and the final decisions, written from the author's notes. It is not a verbatim transcript. Part of this scope was moved to post-mvp, see docs/spec.md, "Scope decision".
+
 Protocol of the brainstorming session with Claude (Anthropic) before writing code.
 Format: Claude asks one question at a time with options and a recommendation;
 the author answers. This is a condensed record of the questions and answers.
@@ -63,3 +65,24 @@ C) page only.
 Multi-venue ticketing platform. Seat-map and zone modes over one sellable-unit
 model, 10-minute holds, simulated payment, guest checkout without account,
 QR tickets, web check-in scanner, roles organizer and controller.
+
+
+---
+
+## Architecture summary (final decisions)
+
+1. **Target audience:** venue management and main event organizers.
+2. **Seating model:** unified "inventory unit" model supporting both interactive seat maps (assigned seats) and zone-based tickets (general admission).
+3. **Payment flow:** simulated checkout with test card validation (success/failure scenarios).
+4. **Authentication:** guest checkout for attendees; login required for organizers and check-in staff.
+5. **Check-in system:** web scanner using `html5-qrcode` (camera) plus manual code entry fallback.
+6. **Roles:** organizer (full management) and controller/staff (ticket scanning only).
+7. **Multi-tenancy:** multi-venue support with data isolation per venue.
+8. **Seat holds:** 10-minute temporary holds with a live client countdown (max 8 seats per order).
+9. **Ticket delivery:** unique web URL, embedded QR code, PDF download option, simulated email log.
+10. **Hold expiry:** server-side background worker.
+11. **Backend stack:** Python (FastAPI, SQLAlchemy ORM, Pydantic) with SQLite.
+12. **Scanner UI:** responsive browser-based camera scanner.
+13. **Design:** modern SaaS UI inspired by v0/Lovable Tailwind specifications.
+14. **QA and issue tracking:** GitHub Issues workflow (`mvp`, `post-mvp`, `user-test-bug`).
+15. **Seed data:** `seed.py` populates SQLite with demo venues, events, seat maps and orders.
