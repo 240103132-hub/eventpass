@@ -10,6 +10,7 @@ info:
     Guests do not have accounts. An order code or ticket code is the access key to that object.
 servers:
   - url: http://localhost:8000
+security: []
 tags:
   - name: Catalog
   - name: Checkout
@@ -599,7 +600,7 @@ components:
       properties:
         result: { type: string, enum: [VALID, ALREADY_USED, WRONG_EVENT, CANCELLED, INVALID] }
         message: { type: string }
-        ticket: { allOf: [{ $ref: '#/components/schemas/Ticket' }], nullable: true }
+        ticket: { $ref: '#/components/schemas/Ticket' }
     LoginRequest:
       type: object
       required: [email, password]
