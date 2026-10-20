@@ -1,4 +1,5 @@
 """HTTP layer. Thin on purpose: parse, call the service, serialize. Rules live in services.py."""
+import os
 from typing import Optional
 
 from fastapi import Depends, FastAPI, Header, Query, Request, Response
@@ -10,13 +11,19 @@ from starlette.exceptions import HTTPException as StarletteHTTPException
 from . import schemas as s
 from .errors import ApiError
 from .repository import InMemoryRepository
-from .seed import seed
+from .seed import ensure_seed
 from .services import TicketingService
 
 
 def build_service() -> TicketingService:
-    repo = InMemoryRepository()  # phase 4: replace with the SQLAlchemy repository
-    seed(repo)
+    """DATABASE_URL selects the storage: a SQLAlchemy URL (default: local SQLite file) or "memory"."""
+    url = os.environ.get("DATABASE_URL", "sqlite:///eventpass.sqlite3")
+    if url == "memory":
+        repo = InMemoryRepository()
+    else:
+        from .sql_repository import SqlRepository
+        repo = SqlRepository(url)
+    ensure_seed(repo)
     return TicketingService(repo)
 
 
@@ -41,6 +48,10 @@ def create_app(service: Optional[TicketingService] = None) -> FastAPI:
         first = exc.errors()[0]
         field = ".".join(str(p) for p in first["loc"] if p != "body")
         return JSONResponse(status_code=422, content={"code": "validation_error", "detail": f"{field}: {first['msg']}"})
+
+    @app.exception_handler(Exception)
+    async def unexpected(_: Request, exc: Exception):
+        return JSONResponse(status_code=500, content={"code": "internal_error", "detail": "Something went wrong"})
 
     @app.exception_handler(StarletteHTTPException)
     async def http_error(_: Request, exc: StarletteHTTPException):

@@ -1,4 +1,4 @@
-"""Service-level tests. Run: cd backend && python -m pytest -q   (or: python -m unittest discover -s tests)"""
+"""Service-level tests, run on in-memory and SQLite storage. Run: cd backend && python -m pytest -q"""
 import threading
 import unittest
 from datetime import datetime, timedelta, timezone
@@ -23,10 +23,15 @@ class Clock:
         self.now += timedelta(**kw)
 
 
-class ServiceTestCase(unittest.TestCase):
+class ServiceTests:
+    """Every test runs against both storages (see the two TestCase classes at the bottom)."""
+
+    def make_repo(self):
+        raise NotImplementedError
+
     def setUp(self):
         self.clock = Clock()
-        repo = InMemoryRepository()
+        repo = self.make_repo()
         seed(repo)
         self.svc = TicketingService(repo, clock=self.clock)
 
@@ -196,6 +201,30 @@ class ServiceTestCase(unittest.TestCase):
         [t.join() for t in threads]
         self.assertEqual(sum(results), 8)  # capacity 10 -> only two holds of 4 fit
         self.assertEqual(self.unit(3, "3-zone-2")["remaining"], 2)
+
+
+class TestMemoryRepo(ServiceTests, unittest.TestCase):
+    def make_repo(self):
+        return InMemoryRepository()
+
+
+class TestSqliteRepo(ServiceTests, unittest.TestCase):
+    def make_repo(self):
+        from app.sql_repository import SqlRepository
+        return SqlRepository("sqlite://")  # fresh in-memory SQLite per test
+
+    def test_data_survives_restart(self):
+        import os
+        import tempfile
+        from app.sql_repository import SqlRepository
+        path = os.path.join(tempfile.mkdtemp(), "t.sqlite3")
+        first = TicketingService(SqlRepository(f"sqlite:///{path}"), clock=self.clock)
+        seed(first.repo)
+        hold = first.create_hold(1, [{"unit_id": "1-A-1"}])
+        order = first.create_order(hold["id"], "Aisha", "aisha@sdu.edu.kz", CARD_OK)
+        second = TicketingService(SqlRepository(f"sqlite:///{path}"), clock=self.clock)  # "restart"
+        self.assertEqual(second.get_order(order["order_code"])["total"], 20000)
+        self.assertEqual(next(u for u in second.get_units(1) if u["id"] == "1-A-1")["status"], "sold")
 
 
 if __name__ == "__main__":

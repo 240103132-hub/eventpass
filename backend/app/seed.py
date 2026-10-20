@@ -47,3 +47,9 @@ def seed(repo):
         row = {k: v for k, v in s.items() if k != "password"}
         row["password_hash"] = hash_password(s["password"])
         repo.add_staff(row)
+
+
+def ensure_seed(repo):
+    """Seed demo data only into an empty database, so restarts keep orders and tickets."""
+    if not repo.list_venues():
+        seed(repo)

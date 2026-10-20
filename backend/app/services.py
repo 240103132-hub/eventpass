@@ -135,6 +135,7 @@ class TicketingService:
             order = {"order_code": code, "status": "paid", "customer_name": customer_name.strip(),
                      "customer_email": customer_email.strip(), "total": hold["total"],
                      "created_at": self.clock(), "ticket_codes": []}
+            tickets = []
             for item in hold["items"]:
                 for _ in range(item["quantity"]):
                     ticket = {
@@ -144,10 +145,13 @@ class TicketingService:
                         "holder_name": order["customer_name"], "status": "valid",
                         "is_used": False, "used_at": None, "order_code": code,
                     }
-                    self.repo.save_ticket(ticket)
+                    tickets.append(ticket)
                     order["ticket_codes"].append(ticket["code"])
+            self.repo.save_order(order)  # order first: tickets reference it (foreign key)
+            for ticket in tickets:
+                self.repo.save_ticket(ticket)
+            for item in hold["items"]:
                 self.repo.add_sold(item["unit_id"], item["quantity"])
-            self.repo.save_order(order)
             self.repo.delete_hold(hold_id)
             return self._order_out(order)
 

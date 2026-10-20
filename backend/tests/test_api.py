@@ -3,13 +3,22 @@ import pytest
 from fastapi.testclient import TestClient
 
 from app.main import create_app
+from app.repository import InMemoryRepository
+from app.seed import seed
+from app.services import TicketingService
 
 CARD_OK = "4242 4242 4242 4242"
 
 
-@pytest.fixture()
-def client():
-    return TestClient(create_app())
+@pytest.fixture(params=["memory", "sqlite"])
+def client(request):
+    if request.param == "memory":
+        repo = InMemoryRepository()
+    else:
+        from app.sql_repository import SqlRepository
+        repo = SqlRepository("sqlite://")
+    seed(repo)
+    return TestClient(create_app(TicketingService(repo)))
 
 
 def buy(client, unit_id="1-A-1", event_id=1):

@@ -1,5 +1,6 @@
 // The only place where the frontend chooses its data source.
-// Phase 1: mock service. Phase 5: replace the line below with `import { httpApi } from './httpApi'`.
+// Real backend by default. For the offline demo run: VITE_USE_MOCK=true npm run dev
 import { mockApi } from './mockApi';
+import { httpApi } from './httpApi';
 
-export const api = mockApi;
+export const api = import.meta.env.VITE_USE_MOCK === 'true' ? mockApi : httpApi;
