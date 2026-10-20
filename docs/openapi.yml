@@ -1,0 +1,674 @@
+openapi: 3.0.3
+info:
+  title: EventPass API
+  version: 0.2.0
+  description: |
+    Contract between the React frontend and the FastAPI backend.
+    Decisions come from docs/spec.md and docs/brainstorm.md.
+    Money is an integer number of KZT. Timestamps are ISO 8601 (UTC).
+    Every seat or zone is a "unit" (sellable unit): holds, orders and tickets work the same for both.
+    Guests do not have accounts. An order code or ticket code is the access key to that object.
+servers:
+  - url: http://localhost:8000
+tags:
+  - name: Catalog
+  - name: Checkout
+  - name: Tickets
+  - name: Auth
+  - name: Organizer
+  - name: Scanner
+paths:
+  /api/venues:
+    get:
+      tags: [Catalog]
+      summary: List venues and cities for catalog filters
+      responses:
+        '200':
+          description: Venues
+          content:
+            application/json:
+              schema: { type: array, items: { $ref: '#/components/schemas/Venue' } }
+  /api/events:
+    get:
+      tags: [Catalog]
+      summary: List published events of all venues (common catalog)
+      parameters:
+        - { name: q, in: query, schema: { type: string }, description: Search by title }
+        - { name: city, in: query, schema: { type: string } }
+        - { name: venue_id, in: query, schema: { type: integer } }
+        - { name: date_from, in: query, schema: { type: string, format: date } }
+        - { name: date_to, in: query, schema: { type: string, format: date } }
+        - { name: limit, in: query, schema: { type: integer, minimum: 1, maximum: 100, default: 50 } }
+        - { name: offset, in: query, schema: { type: integer, minimum: 0, default: 0 } }
+      responses:
+        '200':
+          description: Events
+          content:
+            application/json:
+              schema: { type: array, items: { $ref: '#/components/schemas/Event' } }
+    post:
+      tags: [Organizer]
+      summary: Create an event for a hall of the organizer's venue
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/EventWrite' }
+      responses:
+        '201':
+          description: Created
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Event' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '422': { $ref: '#/components/responses/ValidationError' }
+  /api/organizer/events:
+    get:
+      tags: [Organizer]
+      summary: All events of the organizer's venue including drafts and cancelled
+      security: [{ bearerAuth: [] }]
+      responses:
+        '200':
+          description: Events
+          content:
+            application/json:
+              schema: { type: array, items: { $ref: '#/components/schemas/Event' } }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+  /api/events/{event_id}:
+    parameters:
+      - { $ref: '#/components/parameters/EventId' }
+    get:
+      tags: [Catalog]
+      summary: Get one event
+      responses:
+        '200':
+          description: Event
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Event' }
+        '404': { $ref: '#/components/responses/NotFound' }
+    put:
+      tags: [Organizer]
+      summary: Edit an event or change its status (organizer of the same venue only)
+      description: |
+        Setting status to cancelled releases all units and cancels the paid orders (refund is simulated).
+        Changing mode or hall after tickets were sold answers 409.
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/EventWrite' }
+      responses:
+        '200':
+          description: Updated
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Event' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
+        '422': { $ref: '#/components/responses/ValidationError' }
+  /api/events/{event_id}/units:
+    parameters:
+      - { $ref: '#/components/parameters/EventId' }
+    get:
+      tags: [Catalog]
+      summary: Seat map or zones of an event with live status (poll every 5 seconds)
+      responses:
+        '200':
+          description: Units
+          content:
+            application/json:
+              schema: { type: array, items: { $ref: '#/components/schemas/SellableUnit' } }
+        '404': { $ref: '#/components/responses/NotFound' }
+  /api/events/{event_id}/stats:
+    parameters:
+      - { $ref: '#/components/parameters/EventId' }
+    get:
+      tags: [Organizer]
+      summary: Sales statistics of an event
+      security: [{ bearerAuth: [] }]
+      responses:
+        '200':
+          description: Stats
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/EventStats' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+  /api/events/{event_id}/holds:
+    parameters:
+      - { $ref: '#/components/parameters/EventId' }
+    post:
+      tags: [Checkout]
+      summary: Hold seats or zone tickets for 10 minutes (max 8 tickets in total)
+      description: |
+        409 codes: unit_held, unit_sold. 422 code: limit_exceeded.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/HoldRequest' }
+      responses:
+        '201':
+          description: Hold created
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Hold' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
+        '422': { $ref: '#/components/responses/ValidationError' }
+  /api/holds/{hold_id}:
+    parameters:
+      - { name: hold_id, in: path, required: true, schema: { type: string } }
+    delete:
+      tags: [Checkout]
+      summary: Release a hold before it expires
+      responses:
+        '204': { description: Released }
+        '404': { $ref: '#/components/responses/NotFound' }
+  /api/orders:
+    post:
+      tags: [Checkout]
+      summary: Pay for a hold with a simulated card and get tickets
+      description: |
+        Card 4242 4242 4242 4242 is paid. Card 4000 0000 0000 0002 is declined (402, code card_declined).
+        Spaces and dashes in the number are ignored. The card number is never stored.
+        A declined payment keeps the hold active and creates no order and no ticket.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/OrderRequest' }
+      responses:
+        '201':
+          description: Paid, tickets issued
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Order' }
+        '402': { $ref: '#/components/responses/PaymentDeclined' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '410': { $ref: '#/components/responses/HoldExpired' }
+        '422': { $ref: '#/components/responses/ValidationError' }
+  /api/orders/{order_code}:
+    parameters:
+      - { name: order_code, in: path, required: true, schema: { type: string } }
+    get:
+      tags: [Checkout]
+      summary: Get an order with its tickets (the order code is the access key)
+      responses:
+        '200':
+          description: Order
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Order' }
+        '404': { $ref: '#/components/responses/NotFound' }
+  /api/orders/{order_code}/cancel:
+    parameters:
+      - { name: order_code, in: path, required: true, schema: { type: string } }
+    post:
+      tags: [Checkout]
+      summary: Cancel an order and release its units (refund is simulated)
+      description: |
+        MVP decision: whoever knows the order code can cancel. Tickets of a cancelled order scan as CANCELLED.
+        409 if the order is already cancelled or some ticket is already used.
+      responses:
+        '200':
+          description: Cancelled
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Order' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
+  /api/tickets/{ticket_code}:
+    parameters:
+      - { name: ticket_code, in: path, required: true, schema: { type: string } }
+    get:
+      tags: [Tickets]
+      summary: Ticket page data (the unique code is the access key)
+      responses:
+        '200':
+          description: Ticket
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Ticket' }
+        '404': { $ref: '#/components/responses/NotFound' }
+  /api/tickets/verify:
+    post:
+      tags: [Scanner]
+      summary: Check a ticket at the entrance and mark it used
+      description: |
+        Always answers 200 with a result so the scanner can show a full-screen colour.
+        A ticket works exactly once. Staff see only tickets of their own venue.
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/ScanRequest' }
+      responses:
+        '200':
+          description: Scan result
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ScanResult' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+  /api/auth/login:
+    post:
+      tags: [Auth]
+      summary: Staff login (organizer or controller)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/LoginRequest' }
+      responses:
+        '200':
+          description: Token
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/TokenResponse' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+  /api/auth/me:
+    get:
+      tags: [Auth]
+      summary: Current staff user
+      security: [{ bearerAuth: [] }]
+      responses:
+        '200':
+          description: Current user
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/StaffUser' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+  /api/halls:
+    get:
+      tags: [Organizer]
+      summary: Halls of the organizer's venue
+      security: [{ bearerAuth: [] }]
+      responses:
+        '200':
+          description: Halls
+          content:
+            application/json:
+              schema: { type: array, items: { $ref: '#/components/schemas/Hall' } }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+    post:
+      tags: [Organizer]
+      summary: Create a hall; seats are generated from the sector grid
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/HallWrite' }
+      responses:
+        '201':
+          description: Created
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Hall' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '422': { $ref: '#/components/responses/ValidationError' }
+  /api/halls/{hall_id}:
+    parameters:
+      - { name: hall_id, in: path, required: true, schema: { type: integer } }
+    get:
+      tags: [Organizer]
+      summary: One hall
+      security: [{ bearerAuth: [] }]
+      responses:
+        '200':
+          description: Hall
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Hall' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+  /api/controllers:
+    get:
+      tags: [Organizer]
+      summary: Controllers of the organizer's venue
+      security: [{ bearerAuth: [] }]
+      responses:
+        '200':
+          description: Controllers
+          content:
+            application/json:
+              schema: { type: array, items: { $ref: '#/components/schemas/StaffUser' } }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+    post:
+      tags: [Organizer]
+      summary: Create a controller account
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/LoginRequest' }
+      responses:
+        '201':
+          description: Created
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/StaffUser' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '409': { $ref: '#/components/responses/Conflict' }
+        '422': { $ref: '#/components/responses/ValidationError' }
+  /api/controllers/{controller_id}:
+    parameters:
+      - { name: controller_id, in: path, required: true, schema: { type: integer } }
+    delete:
+      tags: [Organizer]
+      summary: Remove a controller
+      security: [{ bearerAuth: [] }]
+      responses:
+        '204': { description: Removed }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+  /api/email-log:
+    get:
+      tags: [Organizer]
+      summary: Simulated ticket emails of the organizer's venue
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { name: limit, in: query, schema: { type: integer, minimum: 1, maximum: 100, default: 50 } }
+        - { name: offset, in: query, schema: { type: integer, minimum: 0, default: 0 } }
+      responses:
+        '200':
+          description: Email records
+          content:
+            application/json:
+              schema: { type: array, items: { $ref: '#/components/schemas/EmailRecord' } }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+  parameters:
+    EventId:
+      name: event_id
+      in: path
+      required: true
+      schema: { type: integer }
+  responses:
+    Unauthorized:
+      description: Missing or invalid token, or wrong credentials
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/Error' }
+    Forbidden:
+      description: Role not allowed, or data of another venue
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/Error' }
+    NotFound:
+      description: Not found (also used for objects of another venue)
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/Error' }
+    Conflict:
+      description: Conflict, for example a unit is already held (unit_held) or sold (unit_sold)
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/Error' }
+    ValidationError:
+      description: Invalid input, for example more than 8 tickets (limit_exceeded)
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/Error' }
+    PaymentDeclined:
+      description: Card declined (card_declined). The hold stays active and the guest can retry.
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/Error' }
+    HoldExpired:
+      description: The hold has expired (hold_expired). Units were returned to the pool.
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/Error' }
+  schemas:
+    Error:
+      type: object
+      required: [detail]
+      properties:
+        detail: { type: string }
+        code:
+          type: string
+          description: Machine readable code
+          enum: [unit_held, unit_sold, limit_exceeded, card_declined, hold_expired, validation_error, not_found, forbidden, unauthorized]
+          example: card_declined
+    Venue:
+      type: object
+      required: [id, name, city]
+      properties:
+        id: { type: integer }
+        name: { type: string }
+        city: { type: string }
+    Event:
+      type: object
+      required: [id, title, venue_id, venue_name, starts_at, mode, status, price_from]
+      properties:
+        id: { type: integer }
+        title: { type: string }
+        description: { type: string }
+        image_url: { type: string }
+        venue_id: { type: integer }
+        venue_name: { type: string }
+        city: { type: string }
+        hall_id: { type: integer, nullable: true }
+        starts_at: { type: string, format: date-time }
+        mode: { type: string, enum: [seats, zones] }
+        status: { type: string, enum: [draft, published, cancelled] }
+        price_from: { type: integer, description: Lowest unit price }
+        remaining: { type: integer, description: Units still available }
+    EventWrite:
+      type: object
+      required: [title, starts_at, mode]
+      properties:
+        title: { type: string, minLength: 1 }
+        description: { type: string }
+        image_url: { type: string }
+        starts_at: { type: string, format: date-time }
+        mode: { type: string, enum: [seats, zones] }
+        status: { type: string, enum: [draft, published, cancelled], default: draft }
+        hall_id: { type: integer, description: Required in seats mode }
+        sector_prices:
+          type: array
+          description: Price per sector, seats mode
+          items:
+            type: object
+            required: [sector, price]
+            properties:
+              sector: { type: string }
+              price: { type: integer, minimum: 0 }
+        zones:
+          type: array
+          description: Zones with capacity, zones mode
+          items:
+            type: object
+            required: [name, capacity, price]
+            properties:
+              name: { type: string }
+              capacity: { type: integer, minimum: 1 }
+              price: { type: integer, minimum: 0 }
+    SellableUnit:
+      type: object
+      required: [id, kind, label, price, status]
+      properties:
+        id: { type: string, example: 1-A-1 }
+        kind: { type: string, enum: [seat, zone] }
+        label: { type: string, example: A-1 }
+        sector: { type: string, nullable: true }
+        row: { type: string, nullable: true }
+        number: { type: integer, nullable: true }
+        price: { type: integer }
+        status: { type: string, enum: [available, held, sold] }
+        capacity: { type: integer, nullable: true, description: Zones only }
+        remaining: { type: integer, nullable: true, description: Zones only }
+    HoldRequest:
+      type: object
+      required: [items]
+      properties:
+        items:
+          type: array
+          minItems: 1
+          description: Total quantity must not exceed 8
+          items:
+            type: object
+            required: [unit_id]
+            properties:
+              unit_id: { type: string }
+              quantity: { type: integer, minimum: 1, default: 1, description: Always 1 for seats }
+    Hold:
+      type: object
+      required: [id, event_id, expires_at, items, total]
+      properties:
+        id: { type: string }
+        event_id: { type: integer }
+        expires_at: { type: string, format: date-time }
+        items:
+          type: array
+          items:
+            type: object
+            properties:
+              unit_id: { type: string }
+              label: { type: string }
+              quantity: { type: integer }
+              price: { type: integer }
+        total: { type: integer, description: Sum of real unit prices }
+    OrderRequest:
+      type: object
+      required: [hold_id, customer_name, customer_email, card_number]
+      properties:
+        hold_id: { type: string }
+        customer_name: { type: string, minLength: 1 }
+        customer_email: { type: string, format: email }
+        card_number: { type: string, writeOnly: true }
+    Order:
+      type: object
+      required: [order_code, status, customer_name, customer_email, total, created_at, tickets]
+      properties:
+        order_code: { type: string, example: ORD-394364 }
+        status: { type: string, enum: [pending, paid, cancelled, expired] }
+        customer_name: { type: string }
+        customer_email: { type: string }
+        total: { type: integer }
+        created_at: { type: string, format: date-time }
+        tickets:
+          type: array
+          items: { $ref: '#/components/schemas/Ticket' }
+    Ticket:
+      type: object
+      required: [code, event_id, event_title, venue_name, starts_at, unit_label, holder_name, status, is_used]
+      properties:
+        code: { type: string, example: TKT-IEPH0DV7, description: 'Unique code, encoded in the QR' }
+        event_id: { type: integer }
+        event_title: { type: string }
+        venue_name: { type: string }
+        starts_at: { type: string, format: date-time }
+        unit_label: { type: string, example: D-7 }
+        holder_name: { type: string }
+        status: { type: string, enum: [valid, used, cancelled] }
+        is_used: { type: boolean }
+        used_at: { type: string, format: date-time, nullable: true }
+    ScanRequest:
+      type: object
+      required: [code, event_id]
+      properties:
+        code: { type: string }
+        event_id: { type: integer, description: Event being checked in }
+    ScanResult:
+      type: object
+      required: [result, message]
+      properties:
+        result: { type: string, enum: [VALID, ALREADY_USED, WRONG_EVENT, CANCELLED, INVALID] }
+        message: { type: string }
+        ticket: { allOf: [{ $ref: '#/components/schemas/Ticket' }], nullable: true }
+    LoginRequest:
+      type: object
+      required: [email, password]
+      properties:
+        email: { type: string, format: email }
+        password: { type: string, minLength: 8, writeOnly: true }
+    TokenResponse:
+      type: object
+      required: [access_token, token_type, role, venue_id]
+      properties:
+        access_token: { type: string }
+        token_type: { type: string, enum: [bearer] }
+        role: { type: string, enum: [organizer, controller] }
+        venue_id: { type: integer }
+    StaffUser:
+      type: object
+      required: [id, email, role, venue_id]
+      properties:
+        id: { type: integer }
+        email: { type: string }
+        role: { type: string, enum: [organizer, controller] }
+        venue_id: { type: integer }
+    HallWrite:
+      type: object
+      required: [name, sectors]
+      properties:
+        name: { type: string, minLength: 1 }
+        sectors:
+          type: array
+          minItems: 1
+          items:
+            type: object
+            required: [name, rows, seats_per_row]
+            properties:
+              name: { type: string }
+              rows: { type: integer, minimum: 1, maximum: 50 }
+              seats_per_row: { type: integer, minimum: 1, maximum: 50 }
+    Hall:
+      type: object
+      required: [id, name, sectors, seat_count]
+      properties:
+        id: { type: integer }
+        name: { type: string }
+        seat_count: { type: integer }
+        sectors:
+          type: array
+          items:
+            type: object
+            properties:
+              name: { type: string }
+              rows: { type: integer }
+              seats_per_row: { type: integer }
+    EventStats:
+      type: object
+      required: [event_id, capacity, sold, held, remaining, revenue, checked_in]
+      properties:
+        event_id: { type: integer }
+        capacity: { type: integer }
+        sold: { type: integer }
+        held: { type: integer }
+        remaining: { type: integer }
+        revenue: { type: integer }
+        checked_in: { type: integer }
+    EmailRecord:
+      type: object
+      required: [id, to, subject, ticket_link, sent_at]
+      properties:
+        id: { type: integer }
+        to: { type: string }
+        subject: { type: string }
+        ticket_link: { type: string }
+        sent_at: { type: string, format: date-time }
