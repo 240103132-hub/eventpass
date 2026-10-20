@@ -1,8 +1,7 @@
 import React, { useState, useEffect } from 'react';
-import { mockService } from './mockService';
+import { api } from './api';
 import { Calendar, MapPin, Ticket, QrCode, ShieldCheck, Clock, CheckCircle2, ArrowLeft, Camera } from 'lucide-react';
 import { QRCodeCanvas } from 'qrcode.react';
-import { Html5QrcodeScanner } from 'html5-qrcode';
 
 export default function App() {
   const [view, setView] = useState('catalog'); // 'catalog', 'seats', 'checkout', 'success', 'scanner'
@@ -21,7 +20,7 @@ export default function App() {
   const [cardNumber, setCardNumber] = useState('');
 
   useEffect(() => {
-    setEvents(mockService.getEvents());
+    api.getEvents().then(setEvents).catch(err => console.error(err));
   }, []);
 
   // Timer countdown for holds
@@ -38,9 +37,10 @@ export default function App() {
     return () => clearInterval(interval);
   }, [holdTimer]);
 
-  const handleSelectEvent = (event) => {
+  const handleSelectEvent = async (event) => {
     setSelectedEvent(event);
-    setSeats(mockService.getSeats(event.id));
+    const eventSeats = await api.getSeats(event.id);
+    setSeats(eventSeats);
     setSelectedSeatIds([]);
     setView('seats');
   };
@@ -63,32 +63,33 @@ export default function App() {
       alert('Please select at least one seat.');
       return;
     }
-    const res = mockService.holdSeats(selectedEvent.id, selectedSeatIds);
-    if (res.success) {
-      setHoldTimer(600); // 10 minutes
-      setView('checkout');
-    }
+    setHoldTimer(600); // 10 minutes hold
+    setView('checkout');
   };
 
-  const handleCompletePayment = (e) => {
+  const handleCompletePayment = async (e) => {
     e.preventDefault();
     if (!customerName || !customerEmail || !cardNumber) {
       alert('Please fill in all checkout fields.');
       return;
     }
 
-    const orderData = {
-      event_id: selectedEvent.id,
-      seat_ids: selectedSeatIds,
-      total_amount: selectedSeatIds.length * selectedEvent.price,
-      customer_name: customerName,
-      customer_email: customerEmail,
-    };
+    try {
+      const orderData = {
+        event_id: selectedEvent.id,
+        seat_ids: selectedSeatIds,
+        total_amount: selectedSeatIds.length * selectedEvent.price,
+        customer_name: customerName,
+        customer_email: customerEmail,
+      };
 
-    const result = mockService.createOrder(orderData);
-    setLastOrder(result.order);
-    setLastTickets(result.tickets);
-    setView('success');
+      const result = await api.createOrder(orderData);
+      setLastOrder(result.order);
+      setLastTickets(result.tickets);
+      setView('success');
+    } catch (err) {
+      alert('Payment failed: ' + err.message);
+    }
   };
 
   return (
@@ -101,7 +102,7 @@ export default function App() {
           </div>
           <div>
             <h1 className="text-xl font-black tracking-wider text-white">EventPass</h1>
-            <p className="text-xs text-slate-400">B2B Ticketing & Venue Management</p>
+            <p className="text-xs text-slate-400">B2B Ticketing & Venue Management (FastAPI + SQLite)</p>
           </div>
         </div>
         <div className="flex items-center space-x-4">
@@ -302,7 +303,7 @@ export default function App() {
             <div className="w-16 h-16 bg-emerald-500/10 border border-emerald-500/30 text-emerald-400 rounded-full flex items-center justify-center mx-auto mb-4">
               <CheckCircle2 className="w-8 h-8" />
             </div>
-            <h2 className="text-2xl font-bold text-white mb-1">Booking Confirmed!</h2>
+            <h2 className="text-2xl font-bold text-white mb-1">Booking Confirmed! (SQLite Backend)</h2>
             <p className="text-slate-400 text-sm mb-6">Order code: <span className="font-mono font-bold text-white">{lastOrder.order_code}</span></p>
 
             <div className="space-y-6 mb-8">
@@ -337,7 +338,7 @@ export default function App() {
         {view === 'scanner' && (
           <div className="max-w-xl mx-auto bg-slate-800 border border-slate-700 rounded-2xl p-8 shadow-xl text-center">
             <h2 className="text-2xl font-bold text-white mb-2">Check-in Scanner</h2>
-            <p className="text-slate-400 text-sm mb-6">Simulate ticket validation using QR codes or manual entry.</p>
+            <p className="text-slate-400 text-sm mb-6">Validate tickets against the SQLite database.</p>
 
             <div className="space-y-4">
               <input 
@@ -347,21 +348,18 @@ export default function App() {
                 className="w-full bg-slate-900 border border-slate-700 rounded-xl px-4 py-3 text-white focus:outline-none focus:border-indigo-500"
               />
               <button 
-                onClick={() => {
+                onClick={async () => {
                   const hash = document.getElementById('manual-hash').value;
-                  const ticket = mockService.getTicketByHash(hash);
-                  if (!ticket) {
-                    setScannerResult({ success: false, message: 'Invalid Ticket Hash!' });
-                  } else if (ticket.is_used) {
-                    setScannerResult({ success: false, message: 'Ticket ALREADY USED!' });
-                  } else {
-                    mockService.markTicketUsed(hash);
-                    setScannerResult({ success: true, message: 'Ticket Verified Successfully! Welcome!' });
+                  try {
+                    const res = await api.verifyTicket(hash);
+                    setScannerResult({ success: true, message: res.message });
+                  } catch (err) {
+                    setScannerResult({ success: false, message: err.message });
                   }
                 }}
                 className="w-full bg-indigo-600 hover:bg-indigo-500 text-white font-bold py-3 rounded-xl transition"
               >
-                Verify Ticket Manually
+                Verify Ticket on Backend
               </button>
 
               {scannerResult && (
