@@ -23,3 +23,7 @@ simulated payment, QR tickets, check-in scanner, multi-venue, two roles.
 - `docs/brainstorm.md`: how decisions were made
 - Before writing tests read `docs/testing-guidelines.md`
 - Before touching the UI read `docs/design-system.md`
+
+## Git hygiene
+- Before every commit run `git status` and add files by name. Never use `git add .`.
+- One commit = one purpose. Do not commit unrelated changes together.
